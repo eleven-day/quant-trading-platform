@@ -1,0 +1,47 @@
+body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+      'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+      sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  
+  .ant-layout {
+    background: #f0f2f5;
+  }
+  
+  .site-layout-background {
+    background: #fff;
+    border-radius: 4px;
+  }
+  
+  .term-tooltip {
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    cursor: help;
+    color: #1890ff;
+  }
+  
+  .dashboard-card {
+    margin-bottom: 16px;
+    border-radius: 8px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  }
+  
+  .dashboard-card .ant-card-head {
+    border-bottom: 1px solid #f0f0f0;
+  }
+  
+  .dashboard-card .ant-card-body {
+    padding: 16px;
+  }
+  
+  .strategy-info {
+    margin-bottom: 16px;
+  }
+  
+  .chart-container {
+    height: 400px;
+    margin-bottom: 20px;
+  }

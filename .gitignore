@@ -1,0 +1,15 @@
+# Ignore node_modules directories
+node_modules/
+**/node_modules/
+
+# Ignore python Pycache directories
+__pycache__/    
+**/__pycache__/
+
+# Ignore build directories
+build/
+**/build/
+
+# Ignore dist directories
+dist/
+**/dist/

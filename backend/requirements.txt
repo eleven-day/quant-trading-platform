@@ -1,0 +1,16 @@
+fastapi==0.95.0
+uvicorn==0.21.1
+sqlalchemy==2.0.9
+pydantic==1.10.7
+pandas==1.5.3
+numpy==1.24.2
+tushare==1.2.89
+backtrader==1.9.76.123
+pyecharts==2.0.1
+akshare==1.9.5
+# ta-lib==0.4.25
+python-multipart==0.0.6
+python-jose==3.3.0
+passlib==1.7.4
+bcrypt==4.0.1
+tqdm==4.65.0
