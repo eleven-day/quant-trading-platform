@@ -58,7 +58,7 @@
 
 1. 克隆仓库
 ```bash
-git clone https://github.com/yourusername/quant-trading-platform.git
+git clone https://github.com/eleven-day/quant-trading-platform.git
 cd quant-trading-platform/backend
 ```
 
