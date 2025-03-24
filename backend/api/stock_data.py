@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import List, Optional
-import pandas as pd
+from typing import Optional
 import tushare as ts
 import datetime
 import akshare as ak
@@ -9,9 +8,11 @@ import akshare as ak
 from core.database import get_db
 from core.config import settings
 from models.models import Stock, StockDaily
-from data.fetch import fetch_stock_list, fetch_stock_daily
 
 router = APIRouter()
+
+# Initialize pro as None at module level
+pro = None
 
 # 尝试初始化Tushare
 try:
@@ -36,6 +37,7 @@ async def get_stock_list(
     - **industry**: 行业类型
     - **refresh**: 是否刷新数据
     """
+    global pro
     # 如果需要刷新或数据库中没有数据，则从API获取
     count = db.query(Stock).count()
     if refresh or count == 0:

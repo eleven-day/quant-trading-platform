@@ -90,13 +90,20 @@ def fetch_index_daily(ts_code: str, start_date: str, end_date: str) -> pd.DataFr
             df = pro.index_daily(ts_code=ts_code, start_date=start_date, end_date=end_date)
         # 从Akshare获取
         else:
+            # 转换代码格式，如000001.SH -> sh000001
             code_map = {
-                '000001.SH': '000001',
-                '399001.SZ': '399001',
-                '000300.SH': '000300',
-                '399006.SZ': '399006'
+            '000001.SH': 'sh000001',
+            '399001.SZ': 'sz399001',
+            '000300.SH': 'sh000300',
+            '399006.SZ': 'sz399006'
             }
-            df = ak.stock_zh_index_daily(symbol=code_map.get(ts_code, ts_code))
+            index_code = code_map.get(ts_code, ts_code)
+            if '.' in index_code and index_code not in code_map:
+                prefix = 'sh' if index_code.endswith('.SH') else 'sz' if index_code.endswith('.SZ') else ''
+                code = index_code.split('.')[0]
+                index_code = f"{prefix}{code}"
+            
+            df = ak.stock_zh_index_daily(symbol=index_code)
             df = df.reset_index()
             df = df.rename(columns={
                 'date': 'trade_date',
@@ -106,7 +113,9 @@ def fetch_index_daily(ts_code: str, start_date: str, end_date: str) -> pd.DataFr
                 'close': 'close',
                 'volume': 'vol'
             })
-            df['trade_date'] = df['trade_date'].dt.strftime('%Y%m%d')
+            # 确保日期格式正确
+            df['trade_date'] = pd.to_datetime(df['trade_date']).dt.strftime('%Y%m%d')
+            # 过滤日期范围
             df = df[(df['trade_date'] >= start_date) & (df['trade_date'] <= end_date)]
         
         return df
