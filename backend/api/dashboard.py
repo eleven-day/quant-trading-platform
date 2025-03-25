@@ -5,10 +5,24 @@ import pandas as pd
 import numpy as np
 import datetime
 import random
+import logging
+from pathlib import Path
 
 from core.database import get_db
 from data.fetch import fetch_index_daily, fetch_stock_list
 from models.models import LearningResource, Backtest
+
+# 日志配置
+LOG_DIR: Path = Path("../logs")
+LOG_DIR.mkdir(exist_ok=True)
+log_file = LOG_DIR / "dashboard.log"
+
+# 配置日志
+logger = logging.getLogger("dashboard")
+logger.setLevel(logging.INFO)
+file_handler = logging.FileHandler(log_file)
+file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+logger.addHandler(file_handler)
 
 router = APIRouter()
 
@@ -20,8 +34,10 @@ async def get_dashboard_data(
     """
     获取仪表盘数据，包括市场概览、指数走势、行业热度、策略表现和学习进度
     """
+    logger.info("开始获取仪表盘数据")
     try:
         # 1. 市场概览 - 模拟数据
+        logger.info("生成市场概览数据")
         market_overview = {
             "ssec": {
                 "value": round(random.uniform(3000, 3300), 2),
@@ -45,6 +61,7 @@ async def get_dashboard_data(
         end_date = datetime.datetime.now().strftime('%Y%m%d')
         start_date = (datetime.datetime.now() - datetime.timedelta(days=30)).strftime('%Y%m%d')
         
+        logger.info(f"获取指数走势数据，时间范围: {start_date} - {end_date}")
         try:
             # 尝试获取实际数据
             ssec_df = fetch_index_daily("000001.SH", start_date, end_date)
@@ -56,8 +73,9 @@ async def get_dashboard_data(
             ssec = ssec_df["close"].tolist()
             szse = szse_df["close"].tolist()
             hs300 = hs300_df["close"].tolist()
+            logger.info("成功获取实际指数数据")
         except Exception as e:
-            print(f"获取指数数据失败: {str(e)}")
+            logger.warning(f"获取指数数据失败: {str(e)}，将使用模拟数据")
             # 使用模拟数据
             dates = [(datetime.datetime.now() - datetime.timedelta(days=i)).strftime('%Y%m%d') for i in range(30, 0, -1)]
             
@@ -76,6 +94,7 @@ async def get_dashboard_data(
         }
         
         # 3. 行业热度图 - 模拟数据
+        logger.info("生成行业热度数据")
         sectors = [
             "银行", "保险", "证券", "房地产", "医药", "食品饮料", 
             "家电", "汽车", "电子", "计算机", "通信", "传媒",
@@ -92,26 +111,10 @@ async def get_dashboard_data(
             })
         
         # 4. 策略表现 - 从回测记录中获取或模拟
+        logger.info("获取策略表现数据")
         strategies_data = {
-            "dates": dates[-15:],  # 使用最近15天
             "strategies": []
         }
-        
-        # 尝试从数据库获取策略
-        backtests = db.query(Backtest).order_by(Backtest.created_at.desc()).limit(3).all()
-        if backtests:
-            for backtest in backtests:
-                if backtest.results and "returns" in backtest.results:
-                    returns = []
-                    for ret in backtest.results["returns"][-15:]:
-                        initial = backtest.initial_capital
-                        value = ret["value"]
-                        returns.append((value - initial) / initial * 100)
-                    
-                    strategies_data["strategies"].append({
-                        "name": backtest.strategy.name,
-                        "returns": returns
-                    })
         
         # 如果没有足够的策略，添加模拟数据
         while len(strategies_data["strategies"]) < 3:

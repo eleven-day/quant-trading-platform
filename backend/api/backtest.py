@@ -6,12 +6,35 @@ import numpy as np
 import datetime
 import json
 import uuid
+import logging
+from pathlib import Path
+import os
 
 from core.database import get_db
 from models.models import Strategy, Backtest, Transaction, Stock, StockDaily
 from data.fetch import fetch_stock_daily
 from data.process import calculate_returns, calculate_drawdowns, calculate_performance_metrics
 from strategies import basic, momentum, value
+
+# 日志配置
+LOG_DIR: Path = Path("../logs")
+if not LOG_DIR.exists():
+    os.makedirs(LOG_DIR, exist_ok=True)
+
+# 创建logger
+logger = logging.getLogger("backtest")
+logger.setLevel(logging.INFO)
+
+# 创建文件处理器
+file_handler = logging.FileHandler(LOG_DIR / "backtest.log")
+file_handler.setLevel(logging.INFO)
+
+# 创建格式器
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(formatter)
+
+# 添加处理器
+logger.addHandler(file_handler)
 
 router = APIRouter()
 
@@ -40,28 +63,38 @@ async def run_backtest(
     initial_capital = backtest_params.get("initial_capital", 100000)
     stock_pool = backtest_params.get("stock_pool", [])
     
+    logger.info(f"开始回测 - 策略ID: {strategy_id}, 起始日期: {start_date}, 结束日期: {end_date}, 初始资金: {initial_capital}")
+    
     # 验证参数
     if not strategy_id:
+        logger.error("缺少策略ID参数")
         raise HTTPException(status_code=400, detail="需要指定策略ID")
     if not start_date or not end_date:
+        logger.error("缺少开始日期或结束日期参数")
         raise HTTPException(status_code=400, detail="需要指定开始日期和结束日期")
     if not stock_pool:
+        logger.error("缺少股票池参数")
         raise HTTPException(status_code=400, detail="需要指定股票池")
     
     # 获取策略
     strategy = db.query(Strategy).filter(Strategy.id == strategy_id).first()
     if not strategy:
+        logger.error(f"策略ID {strategy_id} 不存在")
         raise HTTPException(status_code=404, detail="策略不存在")
     
     try:
         # 准备数据
         stock_data = {}
         stock_names = {}
+        logger.info(f"准备股票数据，股票池大小: {len(stock_pool)}")
+        
         for ts_code in stock_pool:
+            logger.debug(f"处理股票: {ts_code}")
             # 检查数据库是否有股票信息
             stock = db.query(Stock).filter(Stock.ts_code == ts_code).first()
             if not stock:
                 # 如果没有，可以尝试获取
+                logger.info(f"股票 {ts_code} 信息不存在于数据库中，创建新记录")
                 stock = Stock(ts_code=ts_code, name=ts_code)
                 db.add(stock)
                 db.commit()
@@ -81,6 +114,7 @@ async def run_backtest(
                 
                 # 如果数据库中没有数据，从API获取
                 if not daily_data:
+                    logger.info(f"从API获取股票 {ts_code} 历史数据")
                     df = fetch_stock_daily(ts_code, start_date, end_date)
                     # 保存到数据库
                     for _, row in df.iterrows():
@@ -97,6 +131,7 @@ async def run_backtest(
                         )
                         db.add(daily)
                     db.commit()
+                    logger.info(f"成功保存 {ts_code} 历史数据到数据库")
                     
                     # 重新查询
                     daily_data = (
@@ -125,23 +160,30 @@ async def run_backtest(
                 if data:
                     df = pd.DataFrame(data)
                     stock_data[ts_code] = df
+                    logger.debug(f"股票 {ts_code} 数据准备完成，包含 {len(df)} 条记录")
             except Exception as e:
+                logger.error(f"获取股票 {ts_code} 数据失败: {str(e)}")
                 print(f"获取股票 {ts_code} 数据失败: {str(e)}")
         
         if not stock_data:
+            logger.error("没有获取到有效的股票数据")
             raise HTTPException(status_code=400, detail="没有有效的股票数据")
         
         # 获取策略参数
         strategy_params = backtest_params.get("parameters", {})
+        logger.info(f"策略参数: {strategy_params}")
         
         # 创建策略实例
         strategy_class = strategy_modules.get(strategy.code)
         if not strategy_class:
+            logger.error(f"不支持的策略类型: {strategy.code}")
             raise HTTPException(status_code=400, detail=f"不支持的策略类型: {strategy.code}")
         
         strategy_instance = strategy_class(strategy_params)
+        logger.info(f"创建策略实例: {strategy.code}")
         
         # 执行回测
+        logger.info("开始执行回测...")
         backtest_result = strategy_instance.run_backtest(
             data=stock_data,
             initial_capital=initial_capital,
@@ -150,7 +192,10 @@ async def run_backtest(
         
         # 如果有错误
         if "error" in backtest_result:
+            logger.error(f"回测执行错误: {backtest_result['error']}")
             raise HTTPException(status_code=400, detail=backtest_result["error"])
+        
+        logger.info(f"回测完成，最终资金: {backtest_result['final_capital']}")
         
         # 创建回测记录
         backtest_record = Backtest(
@@ -165,8 +210,11 @@ async def run_backtest(
         )
         db.add(backtest_record)
         db.commit()
+        logger.info(f"创建回测记录，ID: {backtest_record.id}")
         
         # 创建交易记录
+        transaction_count = len(backtest_result.get("transactions", []))
+        logger.info(f"保存 {transaction_count} 条交易记录")
         for transaction in backtest_result.get("transactions", []):
             tx = Transaction(
                 backtest_id=backtest_record.id,
@@ -194,17 +242,22 @@ async def run_backtest(
         benchmark_returns = []
         try:
             from data.fetch import fetch_index_daily
+            logger.info("获取基准指数数据(沪深300)")
             benchmark_df = fetch_index_daily("000300.SH", start_date, end_date)
             if not benchmark_df.empty:
                 benchmark_prices = benchmark_df["close"].tolist()
                 benchmark_returns = calculate_returns(benchmark_prices)
+                logger.info(f"成功获取基准指数数据，包含 {len(benchmark_df)} 条记录")
         except Exception as e:
+            logger.error(f"获取基准数据失败: {str(e)}")
             print(f"获取基准数据失败: {str(e)}")
             # 如果获取失败，生成一个简单的基准
             benchmark_returns = np.cumsum(np.random.normal(0, 0.5, len(strategy_returns))).tolist()
+            logger.info("使用随机生成的基准数据替代")
         
         # 如果长度不一致，调整基准收益率长度
         if len(benchmark_returns) != len(strategy_returns):
+            logger.warning(f"基准数据长度 ({len(benchmark_returns)}) 与策略数据长度 ({len(strategy_returns)}) 不一致，进行调整")
             if len(benchmark_returns) > len(strategy_returns):
                 benchmark_returns = benchmark_returns[:len(strategy_returns)]
             else:
@@ -217,6 +270,7 @@ async def run_backtest(
         drawdowns = calculate_drawdowns(equity_values)
         
         # 计算性能指标
+        logger.info("计算性能指标")
         performance = calculate_performance_metrics(strategy_returns, benchmark_returns)
         
         # 计算月度收益
@@ -291,6 +345,8 @@ async def run_backtest(
                 "benchmark": "N/A"
             })
         
+        logger.info("回测数据处理完成，准备返回结果")
+        
         # 返回结果
         return {
             "backtest_id": backtest_record.id,
@@ -333,6 +389,7 @@ async def run_backtest(
         }
     
     except Exception as e:
+        logger.exception(f"执行回测失败: {str(e)}")
         raise HTTPException(status_code=500, detail=f"执行回测失败: {str(e)}")
 
 
@@ -346,12 +403,16 @@ async def get_backtest_result(
     
     - **backtest_id**: 回测ID
     """
+    logger.info(f"获取回测结果，回测ID: {backtest_id}")
+    
     backtest = db.query(Backtest).filter(Backtest.id == backtest_id).first()
     if not backtest:
+        logger.error(f"回测ID {backtest_id} 不存在")
         raise HTTPException(status_code=404, detail="回测记录不存在")
     
     # 获取交易记录
     transactions = db.query(Transaction).filter(Transaction.backtest_id == backtest_id).all()
+    logger.info(f"找到 {len(transactions)} 条交易记录")
     
     # 返回结果
     return {
@@ -393,12 +454,15 @@ async def list_backtests(
     - **limit**: 每页数量
     - **offset**: 偏移量
     """
+    logger.info(f"获取回测列表，策略ID: {strategy_id}, 限制: {limit}, 偏移: {offset}")
+    
     query = db.query(Backtest)
     if strategy_id:
         query = query.filter(Backtest.strategy_id == strategy_id)
     
     total = query.count()
     backtests = query.order_by(Backtest.created_at.desc()).offset(offset).limit(limit).all()
+    logger.info(f"找到 {total} 条回测记录，返回 {len(backtests)} 条")
     
     return {
         "total": total,

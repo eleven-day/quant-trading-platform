@@ -2,10 +2,36 @@ from fastapi import APIRouter, Depends, HTTPException, Body, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 import json
+import logging
+from pathlib import Path
 from datetime import datetime, timedelta
 
 from core.database import get_db
 from models.models import GlossaryTerm, LearningResource
+
+# 日志配置
+LOG_DIR: Path = Path("../logs")
+LOG_DIR.mkdir(exist_ok=True)
+
+logger = logging.getLogger("learning_api")
+logger.setLevel(logging.INFO)
+
+# 文件处理器
+file_handler = logging.FileHandler(LOG_DIR / "learning_api.log")
+file_handler.setLevel(logging.INFO)
+
+# 控制台处理器
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+
+# 格式化器
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(formatter)
+console_handler.setFormatter(formatter)
+
+# 添加处理器
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
 
 router = APIRouter()
 
@@ -22,6 +48,7 @@ async def get_glossary(
     - **category**: 类别 (可选)
     - **search**: 搜索关键词 (可选)
     """
+    logger.info(f"获取术语表请求: category={category}, search={search}")
     query = db.query(GlossaryTerm)
     
     if category:
@@ -37,6 +64,7 @@ async def get_glossary(
     
     # 如果数据库中没有术语，添加一些预定义术语
     if not terms:
+        logger.info("术语表为空，添加预定义术语")
         # 添加常用术语
         common_terms = {
             '量化交易': '使用数学模型和计算机算法来制定交易决策的投资方法',
@@ -86,12 +114,14 @@ async def get_glossary(
             db.add(db_term)
         
         db.commit()
+        logger.info(f"添加了 {len(common_terms)} 个预定义术语")
         
         # 重新查询
         terms = db.query(GlossaryTerm).all()
     
     # 转换为字典
     glossary = {term.term: term.definition for term in terms}
+    logger.info(f"返回 {len(glossary)} 个术语")
     
     return glossary
 
@@ -110,6 +140,7 @@ async def get_learning_resources(
     - **tag**: 标签
     - **search**: 搜索关键词
     """
+    logger.info(f"获取学习资源请求: type={resource_type}, tag={tag}, search={search}")
     query = db.query(LearningResource)
     
     if resource_type:
@@ -129,6 +160,7 @@ async def get_learning_resources(
     
     # 如果数据库中没有资源，添加一些示例资源
     if not resources:
+        logger.info("学习资源为空，添加示例资源")
         # 添加示例教程
         tutorials = [
             {
@@ -323,6 +355,8 @@ async def get_learning_resources(
         ]
         
         # 将示例数据添加到数据库
+        resources_added = 0
+        
         for tutorial in tutorials:
             resource = LearningResource(
                 title=tutorial["title"],
@@ -338,6 +372,7 @@ async def get_learning_resources(
                 }
             )
             db.add(resource)
+            resources_added += 1
         
         for article in articles:
             resource = LearningResource(
@@ -353,6 +388,7 @@ async def get_learning_resources(
                 }
             )
             db.add(resource)
+            resources_added += 1
         
         for video in videos:
             resource = LearningResource(
@@ -366,6 +402,7 @@ async def get_learning_resources(
                 }
             )
             db.add(resource)
+            resources_added += 1
         
         for tool in tools:
             resource = LearningResource(
@@ -375,8 +412,10 @@ async def get_learning_resources(
                 tags=tool["tags"]
             )
             db.add(resource)
+            resources_added += 1
         
         db.commit()
+        logger.info(f"添加了 {resources_added} 个示例学习资源")
         
         # 重新查询
         resources = db.query(LearningResource).all()
@@ -431,6 +470,8 @@ async def get_learning_resources(
                 "tags": resource.tags
             })
     
+    logger.info(f"返回 {len(tutorials)} 个教程, {len(articles)} 个文章, {len(videos)} 个视频, {len(tools)} 个工具")
+    
     return {
         "tutorials": tutorials,
         "articles": articles,
@@ -449,8 +490,10 @@ async def get_resource_detail(
     
     - **resource_id**: 资源ID
     """
+    logger.info(f"获取资源详情请求: resource_id={resource_id}")
     resource = db.query(LearningResource).filter(LearningResource.id == resource_id).first()
     if not resource:
+        logger.warning(f"资源不存在: resource_id={resource_id}")
         raise HTTPException(status_code=404, detail="资源不存在")
     
     meta_data = resource.meta_data or {}
@@ -470,6 +513,8 @@ async def get_resource_detail(
         "meta_data": meta_data
     }
     
+    logger.info(f"返回资源详情: id={resource.id}, title={resource.title}")
+    
     return result
 
 
@@ -486,11 +531,15 @@ async def update_learning_progress(
     resource_id = progress_data.get("resource_id")
     progress = progress_data.get("progress")
     
+    logger.info(f"更新学习进度请求: resource_id={resource_id}, progress={progress}")
+    
     if not resource_id or progress is None:
+        logger.warning("无效的请求参数: 缺少资源ID或进度信息")
         raise HTTPException(status_code=400, detail="需要提供资源ID和进度信息")
     
     resource = db.query(LearningResource).filter(LearningResource.id == resource_id).first()
     if not resource:
+        logger.warning(f"资源不存在: resource_id={resource_id}")
         raise HTTPException(status_code=404, detail="资源不存在")
     
     # 更新进度
@@ -499,5 +548,6 @@ async def update_learning_progress(
     resource.meta_data = meta_data
     
     db.commit()
+    logger.info(f"学习进度已更新: resource_id={resource_id}, progress={progress}")
     
     return {"message": "学习进度已更新"}

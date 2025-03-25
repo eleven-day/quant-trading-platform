@@ -5,11 +5,28 @@ import pandas as pd
 import numpy as np
 import json
 import random
+import logging
 from datetime import datetime, timedelta
+from pathlib import Path
+import os
 
 from core.database import get_db
 from models.models import Strategy
 from strategies import basic, momentum, value
+
+# 日志配置
+LOG_DIR: Path = Path("../logs")
+LOG_DIR.mkdir(exist_ok=True)
+log_file = LOG_DIR / f"strategy_{datetime.now().strftime('%Y%m%d')}.log"
+
+# 配置日志
+logger = logging.getLogger("strategy_api")
+logger.setLevel(logging.INFO)
+file_handler = logging.FileHandler(log_file)
+file_handler.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
 
 router = APIRouter()
 
@@ -28,10 +45,12 @@ async def get_strategies(
     """
     获取所有策略列表
     """
+    logger.info("Request received for get_strategies")
     strategies = db.query(Strategy).all()
     
     # 如果数据库中没有策略，添加预定义策略
     if not strategies:
+        logger.info("No strategies found in database, adding predefined strategies")
         # 添加预定义策略
         predefined_strategies = [
             {
@@ -220,6 +239,7 @@ async def get_strategies(
         
         db.commit()
         strategies = db.query(Strategy).all()
+        logger.info(f"Added {len(predefined_strategies)} predefined strategies to database")
     
     result = []
     for strategy in strategies:
@@ -232,6 +252,7 @@ async def get_strategies(
             "risk_level": strategy.risk_level
         })
     
+    logger.info(f"Returning {len(result)} strategies")
     return result
 
 
@@ -245,11 +266,14 @@ async def get_strategy_detail(
     
     - **strategy_id**: 策略ID
     """
+    logger.info(f"Request received for get_strategy_detail with strategy_id={strategy_id}")
     strategy = db.query(Strategy).filter(Strategy.id == strategy_id).first()
     if not strategy:
+        logger.warning(f"Strategy with id={strategy_id} not found")
         raise HTTPException(status_code=404, detail="策略不存在")
     
     # 生成模拟的策略绩效数据
+    logger.debug(f"Generating performance data for strategy_id={strategy_id}")
     days = 180
     dates = [(datetime.now() - timedelta(days=i)).strftime('%Y%m%d') for i in range(days, 0, -1)]
     
@@ -298,6 +322,7 @@ async def get_strategy_detail(
         }
     ]
     
+    logger.info(f"Returning detail for strategy '{strategy.name}' (id={strategy_id})")
     return {
         "id": strategy.id,
         "name": strategy.name,
@@ -327,13 +352,17 @@ async def save_strategy(
     - **strategy_data**: 策略数据
     """
     strategy_id = strategy_data.get("id")
+    logger.info(f"Request received for save_strategy with strategy_id={strategy_id}")
+    
     if strategy_id:
         strategy = db.query(Strategy).filter(Strategy.id == strategy_id).first()
         if not strategy:
+            logger.warning(f"Strategy with id={strategy_id} not found")
             raise HTTPException(status_code=404, detail="策略不存在")
         
         # 更新策略参数
         if "parameters" in strategy_data:
+            logger.info(f"Updating parameters for strategy id={strategy_id}")
             current_params = strategy.parameters
             new_params = {}
             
@@ -346,9 +375,12 @@ async def save_strategy(
             for i, param in enumerate(strategy.parameters):
                 if param["name"] in new_params:
                     strategy.parameters[i]["value"] = new_params[param["name"]]
+                    logger.debug(f"Updated parameter {param['name']} = {new_params[param['name']]}")
         
         db.commit()
+        logger.info(f"Strategy id={strategy_id} configuration saved successfully")
         
         return {"message": "策略配置已保存"}
     else:
+        logger.error("Strategy ID not provided in request data")
         raise HTTPException(status_code=400, detail="请提供策略ID")
