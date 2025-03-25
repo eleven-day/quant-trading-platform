@@ -1,7 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List, Optional, Dict, Any
-import pandas as pd
 import numpy as np
 import datetime
 import random
@@ -9,7 +7,7 @@ import logging
 from pathlib import Path
 
 from core.database import get_db
-from data.fetch import fetch_index_daily, fetch_stock_list
+from data.fetch import fetch_index_daily
 from models.models import LearningResource, Backtest
 
 # 日志配置

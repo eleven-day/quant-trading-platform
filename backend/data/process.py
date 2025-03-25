@@ -1,10 +1,9 @@
 import pandas as pd
 import numpy as np
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any
 import talib as ta
 import logging
 from pathlib import Path
-import os
 
 # 日志配置
 LOG_DIR: Path = Path("../logs")

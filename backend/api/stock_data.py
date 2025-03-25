@@ -1,12 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Optional
-import tushare as ts
 import datetime
 import akshare as ak
+import yfinance as yf
 import logging
 from pathlib import Path
 import os
+import pandas as pd
+import requests
+import socket
 
 from core.database import get_db
 from core.config import settings
@@ -39,18 +42,23 @@ logger.addHandler(console_handler)
 
 router = APIRouter()
 
-# Initialize pro as None at module level
-pro = None
+# 检测网络环境
+def is_in_mainland_china():
+    """检测是否在中国大陆网络环境"""
+    try:
+        # 尝试访问Google，如果超时则认为在中国大陆
+        socket.setdefaulttimeout(2)
+        requests.get('https://www.google.com', timeout=2)
+        return False
+    except:
+        return True
 
-# 尝试初始化Tushare
-try:
-    if settings.TUSHARE_TOKEN:
-        ts.set_token(settings.TUSHARE_TOKEN)
-        pro = ts.pro_api()
-        logger.info("Tushare API initialized successfully")
-except Exception as e:
-    logger.error(f"Tushare initialization failed: {e}")
-    pro = None
+# 判断当前网络环境
+USE_AKSHARE = is_in_mainland_china()
+if USE_AKSHARE:
+    logger.info("Network environment: Mainland China, using Akshare as primary data source")
+else:
+    logger.info("Network environment: International, using yfinance as primary data source")
 
 @router.get("/list")
 async def get_stock_list(
@@ -66,7 +74,6 @@ async def get_stock_list(
     - **industry**: 行业类型
     - **refresh**: 是否刷新数据
     """
-    global pro
     logger.info(f"Getting stock list with market={market}, industry={industry}, refresh={refresh}")
     
     # 如果需要刷新或数据库中没有数据，则从API获取
@@ -74,21 +81,31 @@ async def get_stock_list(
     if refresh or count == 0:
         logger.info(f"Refreshing stock data (current count: {count})")
         try:
-            # 先尝试使用Tushare
-            if pro:
-                logger.info("Using Tushare API to fetch stock list")
-                stocks_df = pro.stock_basic(exchange='', list_status='L', 
-                                         fields='ts_code,name,industry,area,market,list_date,is_hs')
-            # 如果Tushare不可用，使用Akshare
-            else:
-                logger.info("Using Akshare API to fetch stock list")
-                stocks_df = ak.stock_info_a_code_name()
-                stocks_df = stocks_df.rename(columns={'code': 'ts_code', 'name': 'name'})
-                stocks_df['industry'] = None
-                stocks_df['area'] = None
-                stocks_df['market'] = None
-                stocks_df['list_date'] = None
-                stocks_df['is_hs'] = None
+            # 默认使用Akshare来获取中国股票列表，因为yfinance不提供完整的中国股票信息
+            logger.info("Using Akshare API to fetch stock list")
+            stocks_df = ak.stock_info_a_code_name()
+            stocks_df = stocks_df.rename(columns={'code': 'ts_code', 'name': 'name'})
+            stocks_df['industry'] = None
+            stocks_df['area'] = None
+            stocks_df['market'] = None
+            stocks_df['list_date'] = None
+            stocks_df['is_hs'] = None
+            
+            # 尝试补充行业信息
+            try:
+                industry_df = ak.stock_industry_category_cninfo()
+                industry_map = {}
+                for _, row in industry_df.iterrows():
+                    code = row['代码']
+                    industry = row['所属行业']
+                    industry_map[code] = industry
+                
+                for i, row in stocks_df.iterrows():
+                    code = row['ts_code'].split('.')[0]
+                    if code in industry_map:
+                        stocks_df.at[i, 'industry'] = industry_map[code]
+            except Exception as e:
+                logger.warning(f"Failed to fetch industry information: {str(e)}")
             
             logger.info(f"Retrieved {len(stocks_df)} stocks, updating database")
             
@@ -98,7 +115,8 @@ async def get_stock_list(
                 if stock:
                     # 更新现有记录
                     for key, value in row.items():
-                        setattr(stock, key, value)
+                        if value is not None:  # 只更新非空值
+                            setattr(stock, key, value)
                 else:
                     # 创建新记录
                     stock = Stock(**row.to_dict())
@@ -170,26 +188,7 @@ async def get_stock_history(
         logger.info(f"Stock {ts_code} not found in database, trying to fetch from API")
         # 尝试获取股票信息
         try:
-            if pro:
-                logger.info("Using Tushare to get stock info")
-                df = pro.stock_basic(ts_code=ts_code)
-                if not df.empty:
-                    stock = Stock(
-                        ts_code=df.iloc[0]['ts_code'],
-                        name=df.iloc[0]['name'],
-                        industry=df.iloc[0].get('industry'),
-                        area=df.iloc[0].get('area'),
-                        market=df.iloc[0].get('market'),
-                        list_date=df.iloc[0].get('list_date'),
-                        is_hs=df.iloc[0].get('is_hs')
-                    )
-                    db.add(stock)
-                    db.commit()
-                    logger.info(f"Added new stock {ts_code} to database")
-                else:
-                    logger.error(f"Stock {ts_code} not found in Tushare")
-                    raise HTTPException(status_code=404, detail=f"股票 {ts_code} 不存在")
-            else:
+            if USE_AKSHARE:
                 # 使用akshare获取
                 logger.info("Using Akshare to get stock info")
                 stock_info = ak.stock_individual_info_em(symbol=ts_code.split('.')[0])
@@ -200,6 +199,35 @@ async def get_stock_history(
                 db.add(stock)
                 db.commit()
                 logger.info(f"Added new stock {ts_code} to database using Akshare")
+            else:
+                # 使用yfinance获取
+                logger.info("Using yfinance to get stock info")
+                yf_symbol = ts_code.replace('.SZ', '.SZ').replace('.SH', '.SS')
+                ticker = yf.Ticker(yf_symbol)
+                info = ticker.info
+                
+                if info and 'longName' in info:
+                    stock = Stock(
+                        ts_code=ts_code,
+                        name=info.get('longName', ts_code),
+                        industry=info.get('industry'),
+                        area='China',
+                        market=info.get('market'),
+                    )
+                    db.add(stock)
+                    db.commit()
+                    logger.info(f"Added new stock {ts_code} to database using yfinance")
+                else:
+                    # 如果yfinance失败，尝试使用akshare
+                    logger.info("yfinance failed, switching to Akshare")
+                    stock_info = ak.stock_individual_info_em(symbol=ts_code.split('.')[0])
+                    stock = Stock(
+                        ts_code=ts_code,
+                        name=stock_info.iloc[0]['value'] if not stock_info.empty else ts_code
+                    )
+                    db.add(stock)
+                    db.commit()
+                    logger.info(f"Added new stock {ts_code} to database using Akshare")
         except Exception as e:
             logger.error(f"Failed to get stock info: {str(e)}")
             raise HTTPException(status_code=500, detail=f"获取股票信息失败: {str(e)}")
@@ -221,12 +249,9 @@ async def get_stock_history(
         # 如果数据库中没有完整数据，则从API获取
         if not daily_data:
             logger.info("No history data in database, fetching from API")
-            # 从Tushare获取
-            if pro:
-                logger.info("Using Tushare to get history data")
-                df = pro.daily(ts_code=ts_code, start_date=start_date, end_date=end_date)
-            # 从Akshare获取
-            else:
+            
+            if USE_AKSHARE:
+                # 从Akshare获取
                 logger.info("Using Akshare to get history data")
                 df = ak.stock_zh_a_hist(symbol=ts_code.split('.')[0], 
                                       start_date=start_date, 
@@ -243,6 +268,56 @@ async def get_stock_history(
                     '涨跌幅': 'pct_chg'
                 })
                 df['trade_date'] = df['trade_date'].str.replace('-', '')
+            else:
+                # 从yfinance获取
+                try:
+                    logger.info("Using yfinance to get history data")
+                    # 转换日期格式
+                    start_date_fmt = f"{start_date[:4]}-{start_date[4:6]}-{start_date[6:]}"
+                    end_date_fmt = f"{end_date[:4]}-{end_date[4:6]}-{end_date[6:]}"
+                    
+                    # 转换代码格式，SH需要变为SS用于yfinance
+                    yf_symbol = ts_code.replace('.SH', '.SS')
+                    
+                    # 获取数据
+                    df = yf.download(yf_symbol, start=start_date_fmt, end=end_date_fmt)
+                    
+                    if df.empty:
+                        raise Exception("yfinance returned empty data")
+                        
+                    # 格式化数据
+                    df = df.reset_index()
+                    df = df.rename(columns={
+                        'Date': 'trade_date',
+                        'Open': 'open',
+                        'High': 'high',
+                        'Low': 'low',
+                        'Close': 'close',
+                        'Volume': 'vol',
+                        'Adj Close': 'adj_close'
+                    })
+                    df['trade_date'] = df['trade_date'].dt.strftime('%Y%m%d')
+                    df['amount'] = df['vol'] * df['close']  # 估算成交额
+                    df['pct_chg'] = df['close'].pct_change() * 100  # 计算涨跌幅
+                    
+                except Exception as e:
+                    logger.error(f"yfinance failed: {str(e)}, switching to Akshare")
+                    # yfinance失败，使用Akshare
+                    df = ak.stock_zh_a_hist(symbol=ts_code.split('.')[0], 
+                                          start_date=start_date, 
+                                          end_date=end_date,
+                                          adjust="qfq")
+                    df = df.rename(columns={
+                        '日期': 'trade_date',
+                        '开盘': 'open',
+                        '最高': 'high',
+                        '最低': 'low',
+                        '收盘': 'close',
+                        '成交量': 'vol',
+                        '成交额': 'amount',
+                        '涨跌幅': 'pct_chg'
+                    })
+                    df['trade_date'] = df['trade_date'].str.replace('-', '')
             
             logger.info(f"Retrieved {len(df) if not df.empty else 0} history records from API")
             
@@ -258,7 +333,7 @@ async def get_stock_history(
                         close=row['close'],
                         vol=row.get('vol'),
                         amount=row.get('amount'),
-                        pct_chg=row.get('pct_chg')
+                        pct_chg=row.get('pct_chg', 0)
                     )
                     db.add(daily)
                 db.commit()
@@ -329,24 +404,31 @@ async def get_market_indices(
             '399006.SZ': '创业板指'
         }
         
+        # yfinance对应的映射
+        yf_indices = {
+            '000001.SH': '^SSEC',  # 上证指数
+            '399001.SZ': '^SZSC',  # 深证成指
+            '000300.SH': '^CSI300',  # 沪深300
+            '399006.SZ': '^SZSE',  # 创业板指
+        }
+        
+        # akshare对应的映射
+        ak_indices = {
+            '000001.SH': '000001',
+            '399001.SZ': '399001',
+            '000300.SH': '000300',
+            '399006.SZ': '399006'
+        }
+        
         result = {}
         for code, name in indices.items():
             try:
                 logger.info(f"Fetching index data for {name} ({code})")
-                # 尝试使用tushare
-                if pro:
-                    logger.info("Using Tushare for index data")
-                    df = pro.index_daily(ts_code=code, start_date=start_date, end_date=end_date)
-                # 使用akshare
-                else:
+                
+                if USE_AKSHARE:
+                    # 使用akshare
                     logger.info("Using Akshare for index data")
-                    code_map = {
-                        '000001.SH': '000001',
-                        '399001.SZ': '399001',
-                        '000300.SH': '000300',
-                        '399006.SZ': '399006'
-                    }
-                    df = ak.stock_zh_index_daily(symbol=code_map[code])
+                    df = ak.stock_zh_index_daily(symbol=ak_indices[code])
                     df = df.reset_index()
                     df = df.rename(columns={
                         'date': 'trade_date',
@@ -358,6 +440,43 @@ async def get_market_indices(
                     })
                     df['trade_date'] = df['trade_date'].dt.strftime('%Y%m%d')
                     df = df[(df['trade_date'] >= start_date) & (df['trade_date'] <= end_date)]
+                else:
+                    # 使用yfinance
+                    try:
+                        logger.info("Using yfinance for index data")
+                        start_date_fmt = f"{start_date[:4]}-{start_date[4:6]}-{start_date[6:]}"
+                        end_date_fmt = f"{end_date[:4]}-{end_date[4:6]}-{end_date[6:]}"
+                        
+                        df = yf.download(yf_indices[code], start=start_date_fmt, end=end_date_fmt)
+                        
+                        if df.empty:
+                            raise Exception("yfinance returned empty data")
+                            
+                        df = df.reset_index()
+                        df = df.rename(columns={
+                            'Date': 'trade_date',
+                            'Open': 'open',
+                            'High': 'high',
+                            'Low': 'low',
+                            'Close': 'close',
+                            'Volume': 'vol'
+                        })
+                        df['trade_date'] = df['trade_date'].dt.strftime('%Y%m%d')
+                    except Exception as e:
+                        logger.error(f"yfinance failed: {str(e)}, switching to Akshare")
+                        # 尝试使用akshare作为备用
+                        df = ak.stock_zh_index_daily(symbol=ak_indices[code])
+                        df = df.reset_index()
+                        df = df.rename(columns={
+                            'date': 'trade_date',
+                            'open': 'open',
+                            'high': 'high',
+                            'low': 'low',
+                            'close': 'close',
+                            'volume': 'vol'
+                        })
+                        df['trade_date'] = df['trade_date'].dt.strftime('%Y%m%d')
+                        df = df[(df['trade_date'] >= start_date) & (df['trade_date'] <= end_date)]
                 
                 # 转换结果
                 if not df.empty:

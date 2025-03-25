@@ -12,9 +12,6 @@ class Settings:
     # 数据库配置
     DATABASE_URL: str = f"sqlite:///{Path('../database/quant_learning.db').absolute()}"
     
-    # Tushare配置 (可以使用自己的token)
-    TUSHARE_TOKEN: Optional[str] = os.getenv("TUSHARE_TOKEN", "")
-    
     # Akshare配置
     AKSHARE_CONFIG: Dict[str, Any] = {}
     

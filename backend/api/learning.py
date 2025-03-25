@@ -1,10 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, Body, Query
+from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
-from typing import List, Optional, Dict, Any
-import json
+from typing import Optional, Dict, Any
 import logging
 from pathlib import Path
-from datetime import datetime, timedelta
 
 from core.database import get_db
 from models.models import GlossaryTerm, LearningResource
