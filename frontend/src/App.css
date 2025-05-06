@@ -1,63 +1,38 @@
-.trigger {
-  padding: 0 24px;
-  font-size: 18px;
-  line-height: 64px;
-  cursor: pointer;
-  transition: color 0.3s;
+.App {
+  text-align: center;
 }
 
-.trigger:hover {
-  color: #1890ff;
+.App-logo {
+  height: 40vmin;
+  pointer-events: none;
 }
 
-.logo {
-  height: 32px;
-  margin: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-size: 18px;
-  font-weight: bold;
-  white-space: nowrap;
-  overflow: hidden;
+@media (prefers-reduced-motion: no-preference) {
+  .App-logo {
+    animation: App-logo-spin infinite 20s linear;
+  }
 }
 
-.logo-collapsed {
-  font-size: 16px;
-}
-
-.header-right {
-  float: right;
-  margin-right: 24px;
-}
-
-.menu-sidebar {
-  height: 100%;
-  border-right: 0;
-}
-
-.ant-layout-sider-children {
+.App-header {
+  background-color: #282c34;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(10px + 2vmin);
+  color: white;
 }
 
-.site-layout .site-layout-background {
-  background: #fff;
+.App-link {
+  color: #61dafb;
 }
 
-.ant-layout-header {
-  padding: 0;
-  background: #fff;
-  box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
-  z-index: 1;
-}
-
-.content-title {
-  margin-bottom: 16px;
-}
-
-.term-tooltip {
-  border-bottom: 1px dashed #1890ff;
-  cursor: help;
+@keyframes App-logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
