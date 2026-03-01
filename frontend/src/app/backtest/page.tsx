@@ -4,8 +4,17 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { ConfigBar, EquityCurve, MetricCards, TradeTable } from '@/components/backtest';
 import { getStrategies, runBacktest } from '@/services/api';
 import type { StrategyInfo, BacktestResult, BacktestParams } from '@/types';
+import { useToast } from '@/components/common';
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return '请求失败，请稍后重试';
+}
 
 export default function BacktestPage() {
+  const { showToast } = useToast();
   const [strategies, setStrategies] = useState<StrategyInfo[]>([]);
   const [selectedStrategy, setSelectedStrategy] = useState<string>('dual-ma');
   const [selectedStock, setSelectedStock] = useState({ symbol: '000001', name: '平安银行' });
@@ -21,9 +30,12 @@ export default function BacktestPage() {
       const data = await getStrategies();
       setStrategies(data);
     } catch (err) {
-      console.error('Failed to load strategies:', err);
+      showToast({
+        type: 'error',
+        message: getErrorMessage(err),
+      });
     }
-  }, []);
+  }, [showToast]);
 
   const handleRunBacktest = useCallback(async () => {
     setIsRunning(true);
@@ -38,11 +50,14 @@ export default function BacktestPage() {
       const res = await runBacktest(params);
       setResult(res);
     } catch (err) {
-      console.error('Failed to run backtest:', err);
+      showToast({
+        type: 'error',
+        message: getErrorMessage(err),
+      });
     } finally {
       setIsRunning(false);
     }
-  }, [selectedStrategy, selectedStock, dateRange, capital]);
+  }, [capital, dateRange, selectedStock, selectedStrategy, showToast]);
 
   // Initial load
   useEffect(() => {

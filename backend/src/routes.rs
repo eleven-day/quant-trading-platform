@@ -15,7 +15,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use crate::data::cache::CacheDb;
+use crate::data::cache::{CacheDb, get_stock_daily_cached};
 use crate::types::*;
 
 /// 应用共享状态 — 包含 SQLite 缓存数据库连接
@@ -87,9 +87,17 @@ async fn search_stocks(
 /// GET /api/stocks/{symbol}/daily?start={start}&end={end}
 /// 获取指定股票日 K 线数据
 async fn get_stock_daily(
+    State(state): State<AppState>,
     Path(symbol): Path<String>,
     Query(params): Query<DailyQuery>,
 ) -> Result<Json<Vec<OHLCV>>, (StatusCode, Json<ApiError>)> {
+    tracing::info!(
+        symbol = %symbol,
+        start = %params.start,
+        end = %params.end,
+        "收到股票日线请求"
+    );
+
     // 参数校验：start <= end
     if params.start > params.end {
         return Err((
@@ -101,11 +109,74 @@ async fn get_stock_daily(
         ));
     }
 
-    match crate::data::market_data::get_stock_daily(&symbol, &params.start, &params.end).await {
-        Ok(data) => Ok(Json(data)),
-        Err(e) => {
-            let error_msg = e.to_string();
+    let symbol_for_fetch = symbol.clone();
+    let start_for_fetch = params.start.clone();
+    let end_for_fetch = params.end.clone();
+    let state_for_fetch = state.clone();
+    let rt_handle = tokio::runtime::Handle::current();
+
+    let data_result = tokio::task::spawn_blocking(move || -> Result<Vec<OHLCV>, String> {
+        let db = state_for_fetch
+            .db
+            .lock()
+            .map_err(|e| format!("数据库锁获取失败: {}", e))?;
+        rt_handle
+            .block_on(get_stock_daily_cached(
+                &db,
+                &symbol_for_fetch,
+                &start_for_fetch,
+                &end_for_fetch,
+            ))
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiError {
+                error: format!("内部任务执行失败: {}", e),
+                code: "INTERNAL_ERROR".to_string(),
+            }),
+        )
+    })?;
+
+    match data_result {
+        Ok(data) => {
+            tracing::info!(
+                symbol = %symbol,
+                start = %params.start,
+                end = %params.end,
+                rows = data.len(),
+                "股票日线请求处理成功"
+            );
+            Ok(Json(data))
+        }
+        Err(error_msg) => {
+            if error_msg.starts_with("数据库锁获取失败:") {
+                tracing::warn!(
+                    symbol = %symbol,
+                    start = %params.start,
+                    end = %params.end,
+                    error = %error_msg,
+                    "股票日线缓存访问失败"
+                );
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ApiError {
+                        error: error_msg,
+                        code: "INTERNAL_ERROR".to_string(),
+                    }),
+                ));
+            }
+
             if error_msg.contains("not found") || error_msg.contains("不存在") {
+                tracing::warn!(
+                    symbol = %symbol,
+                    start = %params.start,
+                    end = %params.end,
+                    error = %error_msg,
+                    "股票不存在"
+                );
                 Err((
                     StatusCode::NOT_FOUND,
                     Json(ApiError {
@@ -114,6 +185,22 @@ async fn get_stock_daily(
                     }),
                 ))
             } else {
+                if error_msg.contains("timeout") || error_msg.contains("timed out") {
+                    tracing::warn!(
+                        symbol = %symbol,
+                        start = %params.start,
+                        end = %params.end,
+                        "股票日线数据源超时，已触发缓存回退流程"
+                    );
+                }
+
+                tracing::warn!(
+                    symbol = %symbol,
+                    start = %params.start,
+                    end = %params.end,
+                    error = %error_msg,
+                    "股票日线数据源异常，缓存回退不可用"
+                );
                 Err((
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(ApiError {
@@ -144,8 +231,17 @@ async fn get_index_snapshot() -> Result<Json<Vec<IndexSnapshot>>, (StatusCode, J
 /// POST /api/backtest
 /// 运行回测
 async fn run_backtest(
+    State(state): State<AppState>,
     Json(params): Json<BacktestParams>,
 ) -> Result<Json<BacktestResult>, (StatusCode, Json<ApiError>)> {
+    tracing::info!(
+        symbol = %params.symbol,
+        strategy = %params.strategy_id,
+        start = %params.start_date,
+        end = %params.end_date,
+        "收到回测请求"
+    );
+
     // 参数校验
     let valid_strategies = ["dual-ma", "rsi", "bollinger", "macd"];
     if !valid_strategies.contains(&params.strategy_id.as_str()) {
@@ -178,27 +274,102 @@ async fn run_backtest(
         ));
     }
 
-    // 获取数据
-    let data = crate::data::market_data::get_stock_daily(
-        &params.symbol,
-        &params.start_date,
-        &params.end_date,
-    )
+    let symbol_for_fetch = params.symbol.clone();
+    let start_for_fetch = params.start_date.clone();
+    let end_for_fetch = params.end_date.clone();
+    let state_for_fetch = state.clone();
+    let rt_handle = tokio::runtime::Handle::current();
+
+    let data_result = tokio::task::spawn_blocking(move || -> Result<Vec<OHLCV>, String> {
+        let db = state_for_fetch
+            .db
+            .lock()
+            .map_err(|e| format!("数据库锁获取失败: {}", e))?;
+        rt_handle
+            .block_on(get_stock_daily_cached(
+                &db,
+                &symbol_for_fetch,
+                &start_for_fetch,
+                &end_for_fetch,
+            ))
+            .map_err(|e| e.to_string())
+    })
     .await
     .map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ApiError {
-                error: e.to_string(),
+                error: format!("内部任务执行失败: {}", e),
+                code: "INTERNAL_ERROR".to_string(),
+            }),
+        )
+    })?;
+
+    let data = data_result.map_err(|error_msg| {
+        if error_msg.starts_with("数据库锁获取失败:") {
+            tracing::warn!(
+                symbol = %params.symbol,
+                strategy = %params.strategy_id,
+                start = %params.start_date,
+                end = %params.end_date,
+                error = %error_msg,
+                "回测缓存访问失败"
+            );
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError {
+                    error: error_msg,
+                    code: "INTERNAL_ERROR".to_string(),
+                }),
+            );
+        }
+
+        if error_msg.contains("timeout") || error_msg.contains("timed out") {
+            tracing::warn!(
+                symbol = %params.symbol,
+                strategy = %params.strategy_id,
+                start = %params.start_date,
+                end = %params.end_date,
+                "回测数据源超时，已触发缓存回退流程"
+            );
+        }
+
+        tracing::warn!(
+            symbol = %params.symbol,
+            strategy = %params.strategy_id,
+            start = %params.start_date,
+            end = %params.end_date,
+            error = %error_msg,
+            "回测数据源异常，缓存回退不可用"
+        );
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiError {
+                error: error_msg,
                 code: "DATA_SOURCE_ERROR".to_string(),
             }),
         )
     })?;
 
+    tracing::info!(
+        symbol = %params.symbol,
+        strategy = %params.strategy_id,
+        rows = data.len(),
+        "回测请求数据准备完成"
+    );
+
     // 执行回测
     match crate::engine::backtest::run_backtest(&params.strategy_id, &data, params.initial_capital)
     {
-        Ok(result) => Ok(Json(result)),
+        Ok(result) => {
+            tracing::info!(
+                symbol = %params.symbol,
+                strategy = %params.strategy_id,
+                total_return = result.total_return,
+                "回测执行成功"
+            );
+            Ok(Json(result))
+        }
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ApiError {

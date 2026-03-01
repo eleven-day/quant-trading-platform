@@ -6,6 +6,7 @@
 use quant_backend::routes;
 
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -24,7 +25,9 @@ async fn main() {
         .allow_headers(Any);
 
     // 构建路由
-    let app = routes::create_router().layer(cors);
+    let app = routes::create_router()
+        .layer(cors)
+        .layer(TraceLayer::new_for_http());
 
     // 启动服务器
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3001").await.unwrap();

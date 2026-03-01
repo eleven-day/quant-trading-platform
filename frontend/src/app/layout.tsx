@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import Navbar from "@/components/Navbar";
+import { ToastProvider } from "@/components/common";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -28,12 +29,14 @@ export default function RootLayout({
       <body
         className={`${inter.variable} ${jetbrainsMono.variable} antialiased`}
       >
-        <div className="h-screen flex flex-col overflow-hidden">
-          <Navbar />
-          <main className="flex-1 flex flex-col min-h-0">
-            {children}
-          </main>
-        </div>
+        <ToastProvider>
+          <div className="h-screen flex flex-col overflow-hidden">
+            <Navbar />
+            <main className="flex-1 flex flex-col min-h-0">
+              {children}
+            </main>
+          </div>
+        </ToastProvider>
       </body>
     </html>
   );
