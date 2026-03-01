@@ -103,12 +103,12 @@ export default function DashboardPage() {
           <SkeletonCard className="flex-1" />
         </div>
 
-        <div className="flex flex-row flex-1 min-h-0 gap-4 px-6 pb-6">
+        <div className="flex flex-col lg:flex-row flex-1 min-h-0 gap-4 px-6 pb-6 overflow-y-auto lg:overflow-hidden">
           <div className="flex flex-col flex-1 min-h-0 w-full gap-3">
             <SkeletonRect width="45%" height={30} />
             <SkeletonRect width="100%" height="100%" className="flex-1 min-h-0" roundedClassName="rounded-[var(--radius-card)]" />
           </div>
-          <SkeletonRect width={360} height="100%" className="shrink-0 min-h-0" roundedClassName="rounded-[var(--radius-card)]" />
+          <SkeletonRect width="100%" height="100%" className="w-full lg:w-[360px] h-64 lg:h-full shrink-0" roundedClassName="rounded-[var(--radius-card)]" />
         </div>
       </div>
     );
@@ -118,7 +118,7 @@ export default function DashboardPage() {
     <div className="flex flex-col w-full h-full min-h-0 bg-bg-page overflow-hidden">
       <IndexSnapshots snapshots={indexSnapshots} />
       
-      <div className="flex flex-row flex-1 min-h-0 gap-4 px-6 pb-6">
+      <div className="flex flex-col lg:flex-row flex-1 min-h-0 gap-4 px-6 pb-6 overflow-y-auto lg:overflow-hidden">
         <ChartArea
           stock={selectedStock}
           klineData={klineData}
@@ -126,7 +126,7 @@ export default function DashboardPage() {
           onTabChange={setActiveTab}
         />
         {watchlist.length === 0 ? (
-          <div className="w-[360px] h-full shrink-0">
+          <div className="w-full lg:w-[360px] shrink-0">
             <EmptyState title="暂无自选股" description="请稍后重试或添加关注股票" />
           </div>
         ) : (

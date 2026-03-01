@@ -7,7 +7,7 @@ interface IndexSnapshotsProps {
 
 export function IndexSnapshots({ snapshots }: IndexSnapshotsProps) {
   return (
-    <div className="flex flex-row gap-4 px-6 py-4 w-full">
+    <div className="flex flex-row flex-wrap gap-4 px-6 py-4 w-full">
       {snapshots.map((snapshot) => {
         const isUp = snapshot.change >= 0;
         const changeColor = isUp ? 'text-up' : 'text-down';

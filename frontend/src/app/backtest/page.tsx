@@ -84,7 +84,7 @@ export default function BacktestPage() {
   }, [strategies, handleRunBacktest]);
 
   return (
-    <div className="flex flex-col w-full h-full min-h-0 bg-[#0A0F1C] overflow-hidden">
+    <div className="flex flex-col w-full h-full min-h-0 bg-[#0A0F1C] overflow-x-hidden overflow-y-auto lg:overflow-hidden">
       <ConfigBar
         strategies={strategies}
         selectedStrategy={selectedStrategy}
@@ -99,7 +99,7 @@ export default function BacktestPage() {
         isRunning={isRunning}
       />
       
-      <div className="flex flex-col flex-1 min-h-0 gap-4 px-6 pb-6">
+      <div className="flex flex-col flex-1 min-h-0 gap-4 px-6 pb-6 overflow-y-auto">
         {result && !isRunning ? (
           <>
             <EquityCurve data={result.equityCurve} />

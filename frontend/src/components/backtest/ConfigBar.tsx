@@ -29,7 +29,7 @@ export function ConfigBar({
   isRunning
 }: ConfigBarProps) {
   return (
-    <div className="flex flex-row items-center w-full px-6 py-4 gap-3">
+    <div className="flex flex-row flex-wrap items-center w-full px-6 py-4 gap-3">
       {/* 策略 */}
       <div className="flex items-center gap-2">
         <span className="text-text-secondary text-[13px]">策略</span>
@@ -83,13 +83,13 @@ export function ConfigBar({
         </div>
       </div>
 
-      <div className="flex-1" />
+      <div className="hidden lg:block flex-1" />
 
       {/* 运行回测 */}
       <button 
         onClick={onRun}
         disabled={isRunning}
-        className="bg-accent text-[#0A0F1C] font-semibold rounded-lg flex items-center gap-2 px-5 py-2 hover:bg-[#1CA8BD] transition-colors disabled:opacity-50"
+        className="bg-accent text-[#0A0F1C] font-semibold rounded-lg flex items-center gap-2 px-5 py-2 hover:bg-[#1CA8BD] transition-colors disabled:opacity-50 w-full lg:w-auto"
       >
         <Play className="w-4 h-4 fill-current" />
         <span className="text-[13px]">运行回测</span>

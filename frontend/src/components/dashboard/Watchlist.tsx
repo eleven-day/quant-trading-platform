@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import type { StockInfo } from '@/types';
 
 interface WatchlistProps {
@@ -16,20 +17,27 @@ function getMockPrice(symbol: string) {
 }
 
 export function Watchlist({ watchlist, selectedSymbol, onSelectStock }: WatchlistProps) {
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
   return (
-    <div className="w-[360px] h-full bg-bg-card rounded-[var(--radius-card)] flex flex-col overflow-hidden shrink-0">
+    <div className="w-full lg:w-[360px] h-auto lg:h-full bg-bg-card rounded-[var(--radius-card)] flex flex-col overflow-hidden shrink-0">
       {/* 表头 */}
-      <div className="flex flex-row justify-between items-center px-4 py-3 bg-bg-inset">
-        <span className="font-sans text-[14px] font-semibold text-text-primary">
+      <div
+        className="flex flex-row justify-between items-center px-4 py-3 bg-bg-inset cursor-pointer lg:cursor-default"
+        onClick={() => setIsCollapsed(!isCollapsed)}
+      >
+        <span className="font-sans text-[14px] font-semibold text-text-primary flex items-center gap-2">
           自选股
+          <ChevronDown className={`w-4 h-4 transition-transform lg:hidden ${isCollapsed ? '-rotate-90' : 'rotate-0'}`} />
         </span>
         <span className="font-sans text-[12px] text-text-tertiary">
           {watchlist.length}只
         </span>
       </div>
 
-      {/* 列标题 */}
-      <div className="flex flex-row justify-between items-center px-4 py-2">
+      <div className={`${isCollapsed ? 'hidden' : 'flex flex-col'} lg:flex lg:flex-col flex-1`}>
+        {/* 列标题 */}
+        <div className="flex flex-row justify-between items-center px-4 py-2">
         <span className="font-sans text-[11px] text-text-tertiary w-[100px]">名称</span>
         <span className="font-sans text-[11px] text-text-tertiary">最新价</span>
         <span className="font-sans text-[11px] text-text-tertiary">涨跌幅</span>
@@ -83,7 +91,8 @@ export function Watchlist({ watchlist, selectedSymbol, onSelectStock }: Watchlis
             </div>
           );
         })}
-      </div>
+</div>
+    </div>
     </div>
   );
 }
