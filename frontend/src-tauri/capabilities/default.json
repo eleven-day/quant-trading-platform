@@ -1,0 +1,8 @@
+{
+  "identifier": "default",
+  "description": "量化学习平台默认权限",
+  "windows": ["main"],
+  "permissions": [
+    "core:default"
+  ]
+}

@@ -9,9 +9,11 @@
     "lint": "eslint",
     "test:e2e": "npx playwright test tests/e2e/",
     "test:visual": "npx playwright test tests/visual/",
-    "test:e2e:ui": "npx playwright test tests/e2e/ --ui"
+    "test:e2e:ui": "npx playwright test tests/e2e/ --ui",
+    "tauri": "tauri"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.10.1",
     "lightweight-charts": "^5.1.0",
     "lucide-react": "^0.575.0",
     "next": "16.1.6",
@@ -21,6 +23,7 @@
   "devDependencies": {
     "@playwright/test": "^1.58.2",
     "@tailwindcss/postcss": "^4",
+    "@tauri-apps/cli": "^2.10.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
