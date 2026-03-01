@@ -1,15 +1,66 @@
 //! 行情数据获取
 //!
 //! 从外部数据源（东方财富 EastMoney）获取 A 股日 K 线、股票搜索、指数快照等数据。
+//!
+//! # 东方财富 API 限制与约束（基于 AKShare 社区经验）
+//!
+//! 这些接口为东方财富内部非公开 API，无官方文档，无 SLA 保证。
+//!
+//! | 约束项         | 阈值                              | 备注                                    |
+//! |---------------|----------------------------------|----------------------------------------|
+//! | 频率限制       | ≤60 次/分钟（安全线 ≤30 次/分钟）    | 超限触发 429 或直接断连                    |
+//! | 并发连接数     | <10 个 TCP 连接                    | 超限高概率触发 IP 封禁                     |
+//! | 封禁表现       | 非 HTTP 403，而是直接 TCP 断连       | `RemoteDisconnected` / `ConnectionReset` |
+//! | 封禁时长       | 数小时到永久                        | 取决于违规严重程度                         |
+//! | 分页上限       | clist/get 每页最多 100 条            | `pz` 参数超过 100 无效                    |
+//! | 数据延迟       | 实时行情约 3-5 秒延迟               | 非 Level-2 实时数据                       |
+//! | 服务条款       | 仅供个人非商业用途                   | 禁止高负载、反向工程                       |
+//!
+//! # 保护措施
+//!
+//! - **请求超时**: 连接超时 5s，读取超时 15s
+//! - **指数退避重试**: 失败后 1s → 2s → 4s + 随机抖动（最多 3 次）
+//! - **User-Agent 伪装**: 模拟 Chrome 浏览器请求头
+//! - **请求间隔**: 分页场景预留 sleep 间隔接口（避免并发轰炸）
+//!
+//! 参考来源：
+//! - AKShare GitHub Issues: #6061, #6098, #5696, #5762
+//! - AKShare 源码 `akshare/utils/request.py` 中的 `request_with_retry` 实现
 
 use crate::types::{IndexSnapshot, OHLCV, StockInfo};
+use rand::Rng;
 use reqwest::Client;
 use serde_json::Value;
+use std::time::Duration;
+use tokio::time::sleep;
 
-/// 构建 reqwest 客户端（模拟浏览器 User-Agent，避免被拒）
-fn build_client() -> Result<Client, Box<dyn std::error::Error>> {
+// ─── 常量配置 ──────────────────────────────────────────────────────────────────
+
+/// 连接超时（秒）— 建立 TCP 连接的最大等待时间
+const CONNECT_TIMEOUT_SECS: u64 = 5;
+
+/// 请求超时（秒）— 整个请求（含读取响应体）的最大等待时间
+/// AKShare 使用 15-20 秒，我们取 15 秒
+const REQUEST_TIMEOUT_SECS: u64 = 15;
+
+/// 最大重试次数（不含首次请求）
+const MAX_RETRIES: u32 = 3;
+
+/// 重试基础延迟（毫秒）— 指数退避: base * 2^attempt + jitter
+const RETRY_BASE_DELAY_MS: u64 = 1000;
+
+/// 模拟 Chrome 浏览器的 User-Agent
+const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) \
+    AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+// ─── 内部工具函数 ──────────────────────────────────────────────────────────────
+
+/// 构建带超时和 User-Agent 的 reqwest 客户端
+fn build_client() -> Result<Client, Box<dyn std::error::Error + Send + Sync>> {
     let client = Client::builder()
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .user_agent(USER_AGENT)
+        .connect_timeout(Duration::from_secs(CONNECT_TIMEOUT_SECS))
+        .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
         .build()?;
     Ok(client)
 }
@@ -39,7 +90,7 @@ fn encode_param(s: &str) -> String {
             }
             _ => {
                 // UTF-8 多字节或特殊字符
-                encoded.push_str(&format!("%{:02X}", b));
+                encoded.push_str(&format!("%{b:02X}"));
             }
         }
     }
@@ -55,6 +106,69 @@ fn build_query_string(params: &[(&str, &str)]) -> String {
         .join("&")
 }
 
+/// 带指数退避重试的 GET 请求
+///
+/// 重试策略（参考 AKShare `request_with_retry`）:
+/// - 第 1 次重试: 等待 ~1s（1000ms + 0~500ms 抖动）
+/// - 第 2 次重试: 等待 ~2s（2000ms + 0~500ms 抖动）
+/// - 第 3 次重试: 等待 ~4s（4000ms + 0~500ms 抖动）
+///
+/// 东方财富 API 在触发频率限制时通常直接断连（RemoteDisconnected），
+/// 而非返回 HTTP 429，因此所有网络错误都会触发重试。
+async fn get_with_retry(client: &Client, url: &str) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+    let mut last_err: Option<Box<dyn std::error::Error + Send + Sync>> = None;
+
+    for attempt in 0..=MAX_RETRIES {
+        if attempt > 0 {
+            // 指数退避 + 随机抖动（避免惊群效应）
+            let base_delay = RETRY_BASE_DELAY_MS * 2u64.pow(attempt - 1);
+            let jitter = rand::thread_rng().gen_range(0..500);
+            let delay = Duration::from_millis(base_delay + jitter);
+            tracing::warn!(
+                "请求失败，第 {}/{} 次重试，等待 {}ms: {}",
+                attempt,
+                MAX_RETRIES,
+                delay.as_millis(),
+                url
+            );
+            sleep(delay).await;
+        }
+
+        match client.get(url).send().await {
+            Ok(resp) => {
+                // 检查 HTTP 状态码
+                let status = resp.status();
+                if status.is_success() {
+                    match resp.json::<Value>().await {
+                        Ok(body) => return Ok(body),
+                        Err(e) => {
+                            last_err = Some(format!("解析响应 JSON 失败: {e}").into());
+                            continue;
+                        }
+                    }
+                }
+                // HTTP 429 (限流) 或 403 (封禁) — 触发重试
+                if status.as_u16() == 429 || status.as_u16() == 403 {
+                    last_err = Some(format!("HTTP {status} — 触发限流或封禁").into());
+                    continue;
+                }
+                // 其他 HTTP 错误
+                last_err = Some(format!("HTTP 请求失败: {status}").into());
+                continue;
+            }
+            Err(e) => {
+                // 网络错误（含东财常见的连接断开）— 触发重试
+                last_err = Some(format!("网络请求失败: {e}").into());
+                continue;
+            }
+        }
+    }
+
+    Err(last_err.unwrap_or_else(|| "请求失败（未知错误）".into()))
+}
+
+// ─── 公开 API ──────────────────────────────────────────────────────────────────
+
 /// 获取指定股票在日期范围内的日 K 线数据
 ///
 /// # 参数
@@ -64,14 +178,19 @@ fn build_query_string(params: &[(&str, &str)]) -> String {
 ///
 /// # 返回
 /// 按日期升序排列的 OHLCV 数据
+///
+/// # API 限制
+/// - 接口: `push2his.eastmoney.com/api/qt/stock/kline/get`
+/// - 单次最多返回 10000 条（通过 lmt 参数控制）
+/// - 频率限制: ≤1 次/秒（安全线），超限触发连接断开
 pub async fn get_stock_daily(
     symbol: &str,
     start: &str,
     end: &str,
-) -> Result<Vec<OHLCV>, Box<dyn std::error::Error>> {
+) -> Result<Vec<OHLCV>, Box<dyn std::error::Error + Send + Sync>> {
     let client = build_client()?;
     let mc = market_code(symbol);
-    let secid = format!("{}.{}", mc, symbol);
+    let secid = format!("{mc}.{symbol}");
     let beg = date_to_compact(start);
     let end_compact = date_to_compact(end);
 
@@ -89,15 +208,14 @@ pub async fn get_stock_daily(
         ("lmt", "10000"),
         ("_", "1"),
     ]);
-    let url = format!("{}?{}", base_url, qs);
+    let url = format!("{base_url}?{qs}");
 
-    let resp = client.get(&url).send().await?;
-    let body: Value = resp.json().await?;
+    let body = get_with_retry(&client, &url).await?;
 
     // 检查返回数据是否有效
     let klines = body["data"]["klines"]
         .as_array()
-        .ok_or_else(|| format!("股票 {} 不存在或无数据", symbol))?;
+        .ok_or_else(|| format!("股票 {symbol} 不存在或无数据"))?;
 
     let mut result: Vec<OHLCV> = Vec::with_capacity(klines.len());
 
@@ -144,9 +262,15 @@ pub async fn get_stock_daily(
 ///
 /// # 返回
 /// 匹配的股票列表
+///
+/// # API 限制
+/// - 接口: `searchapi.eastmoney.com/api/suggest/get`
+/// - 需要固定 token（`D43BF722C8E33BDC906FB84D85E326E8`）
+/// - 最多返回 100 条匹配结果（count=100）
+/// - 频率限制同上，≤1 次/秒
 pub async fn search_stocks(
     keyword: &str,
-) -> Result<Vec<StockInfo>, Box<dyn std::error::Error>> {
+) -> Result<Vec<StockInfo>, Box<dyn std::error::Error + Send + Sync>> {
     // 空关键字直接返回空
     if keyword.trim().is_empty() {
         return Ok(vec![]);
@@ -158,12 +282,10 @@ pub async fn search_stocks(
     let base_url = "https://searchapi.eastmoney.com/api/suggest/get";
     let encoded_keyword = encode_param(keyword);
     let url = format!(
-        "{}?input={}&type=14&token=D43BF722C8E33BDC906FB84D85E326E8&count=100",
-        base_url, encoded_keyword
+        "{base_url}?input={encoded_keyword}&type=14&token=D43BF722C8E33BDC906FB84D85E326E8&count=100"
     );
 
-    let resp = client.get(&url).send().await?;
-    let body: Value = resp.json().await?;
+    let body = get_with_retry(&client, &url).await?;
 
     // Data 可能为 null（无匹配结果）
     let items = match body["QuotationCodeTable"]["Data"].as_array() {
@@ -199,7 +321,13 @@ pub async fn search_stocks(
 ///
 /// # 返回
 /// 固定 3 条指数快照记录
-pub async fn get_index_snapshot() -> Result<Vec<IndexSnapshot>, Box<dyn std::error::Error>> {
+///
+/// # API 限制
+/// - 接口: `33.push2.eastmoney.com/api/qt/clist/get`
+/// - 分页参数 `pz` 最大有效值 100，超过无效
+/// - 数据为盘中约 3-5 秒延迟的准实时行情
+/// - 非交易时段返回上一交易日收盘数据
+pub async fn get_index_snapshot() -> Result<Vec<IndexSnapshot>, Box<dyn std::error::Error + Send + Sync>> {
     let client = build_client()?;
 
     // 东方财富沪深重要指数接口
@@ -219,10 +347,9 @@ pub async fn get_index_snapshot() -> Result<Vec<IndexSnapshot>, Box<dyn std::err
         ("fields", "f2,f3,f12,f14"),
         ("_", "1"),
     ]);
-    let url = format!("{}?{}", base_url, qs);
+    let url = format!("{base_url}?{qs}");
 
-    let resp = client.get(&url).send().await?;
-    let body: Value = resp.json().await?;
+    let body = get_with_retry(&client, &url).await?;
 
     let items = body["data"]["diff"]
         .as_array()
