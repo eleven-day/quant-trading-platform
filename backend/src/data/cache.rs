@@ -53,7 +53,9 @@ impl CacheDb {
                 value TEXT NOT NULL
             );",
         )?;
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=30000;")?;
         Ok(Self { conn })
+
     }
 
     // ─── K 线数据缓存 ─────────────────────────────────────────────────────────

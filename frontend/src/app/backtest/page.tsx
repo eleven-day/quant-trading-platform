@@ -23,6 +23,7 @@ export default function BacktestPage() {
   
   const [result, setResult] = useState<BacktestResult | null>(null);
   const [isRunning, setIsRunning] = useState<boolean>(false);
+  const backtestCache = useRef(new Map<string, BacktestResult>());
   const hasAutoRun = useRef(false);
 
   const loadStrategies = useCallback(async () => {
@@ -47,7 +48,17 @@ export default function BacktestPage() {
         endDate: dateRange.end,
         initialCapital: capital,
       };
+
+      const cacheKey = JSON.stringify(params);
+      const cached = backtestCache.current.get(cacheKey);
+      if (cached) {
+        setResult(cached);
+        setIsRunning(false);
+        return;
+      }
+
       const res = await runBacktest(params);
+      backtestCache.current.set(cacheKey, res);
       setResult(res);
     } catch (err) {
       showToast({

@@ -95,7 +95,7 @@ pub fn run_backtest(
 
 /// 过滤信号：只保留交替的买卖信号，跳过停牌日的信号
 fn filter_signals_alternating(signals: &[Signal], data: &[OHLCV]) -> Vec<Signal> {
-    let mut filtered = Vec::new();
+    let mut filtered = Vec::with_capacity(signals.len());
     let mut holding = false; // 当前是否持仓
 
     for signal in signals {
@@ -122,7 +122,7 @@ fn filter_signals_alternating(signals: &[Signal], data: &[OHLCV]) -> Vec<Signal>
 
 /// 根据交替信号生成交易记录
 fn generate_trades(signals: &[Signal], data: &[OHLCV], initial_capital: f64) -> Vec<Trade> {
-    let mut trades = Vec::new();
+    let mut trades = Vec::with_capacity(signals.len());
     let mut cash = initial_capital;
     let mut shares_held: u64 = 0;
     let mut buy_price = 0.0;
@@ -238,14 +238,14 @@ fn calculate_max_drawdown(equity_curve: &[EquityPoint], is_empty_trades: bool) -
 
 /// 计算胜率
 fn calculate_win_rate(trades: &[Trade]) -> f64 {
-    let sell_trades: Vec<&Trade> = trades.iter().filter(|t| t.trade_type == "sell").collect();
+    let sell_count = trades.iter().filter(|t| t.trade_type == "sell").count();
 
-    if sell_trades.is_empty() {
+    if sell_count == 0 {
         return 0.0;
     }
 
-    let winning_trades = sell_trades.iter().filter(|t| t.pnl > 0.0).count();
-    (winning_trades as f64 / sell_trades.len() as f64) * 100.0
+    let winning_count = trades.iter().filter(|t| t.trade_type == "sell" && t.pnl > 0.0).count();
+    (winning_count as f64 / sell_count as f64) * 100.0
 }
 
 /// 计算夏普比率（简化版：假设无风险利率为 0，年化 252 天）
@@ -254,7 +254,7 @@ fn calculate_sharpe_ratio(equity_curve: &[EquityPoint], is_empty_trades: bool) -
         return 0.0;
     }
 
-    let mut daily_returns = Vec::new();
+    let mut daily_returns = Vec::with_capacity(equity_curve.len() - 1);
     for i in 1..equity_curve.len() {
         let prev = equity_curve[i - 1].value;
         if prev > 0.0 {

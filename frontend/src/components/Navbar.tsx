@@ -1,12 +1,67 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Search } from "lucide-react";
-
+import { useState, useRef, useEffect } from "react";
+import { useDebounce } from "@/hooks/useDebounce";
+import { searchStocks } from "@/services/api";
+import type { StockInfo } from "@/types";
 export default function Navbar() {
   const pathname = usePathname();
+  const router = useRouter();
 
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<StockInfo[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const debouncedQuery = useDebounce(searchQuery, 300);
+
+  useEffect(() => {
+    async function fetchResults() {
+      if (!debouncedQuery.trim()) {
+        setSearchResults([]);
+        return;
+      }
+      setIsSearching(true);
+      try {
+        const results = await searchStocks(debouncedQuery);
+        setSearchResults(results);
+      } catch (e) {
+        console.error("Search failed:", e);
+      } finally {
+        setIsSearching(false);
+      }
+    }
+    void fetchResults();
+  }, [debouncedQuery]);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowDropdown(false);
+      }
+    }
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setShowDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, []);
+
+  const handleSelect = (stock: StockInfo) => {
+    setShowDropdown(false);
+    setSearchQuery("");
+    router.push(`/dashboard?symbol=${stock.symbol}&name=${encodeURIComponent(stock.name)}`);
+  };
   const navLinks = [
     { href: "/dashboard", label: "行情看板" },
     { href: "/backtest", label: "策略回测" },
@@ -37,15 +92,34 @@ export default function Navbar() {
           })}
         </div>
       </div>
-      <div className="relative w-[240px] h-9">
+      <div className="relative w-[240px] h-9" ref={dropdownRef}>
         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
           <Search className="w-4 h-4 text-text-muted" />
         </div>
         <input
           type="text"
           placeholder="搜索股票代码或名称..."
+          value={searchQuery}
+          onChange={(e) => {
+            setSearchQuery(e.target.value);
+            setShowDropdown(true);
+          }}
+          onFocus={() => setShowDropdown(true)}
           className="w-full h-full bg-bg-card text-text-primary text-[14px] rounded-lg pl-9 pr-4 outline-none border border-transparent focus:border-accent/30 focus:bg-bg-inset transition-colors placeholder:text-text-muted"
         />
+        {showDropdown && searchResults.length > 0 && (
+          <div className="absolute top-full left-0 w-full mt-1 bg-bg-card border border-white/10 rounded-lg shadow-lg overflow-hidden z-50">
+            {searchResults.map((stock) => (
+              <div
+                key={stock.symbol}
+                className="hover:bg-bg-inset px-4 py-2 cursor-pointer text-text-primary text-[14px]"
+                onClick={() => handleSelect(stock)}
+              >
+                {stock.symbol} {stock.name}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </nav>
   );
