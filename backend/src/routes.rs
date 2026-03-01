@@ -7,7 +7,7 @@ use axum::{
     extract::{Path, Query},
     http::StatusCode,
     response::Json,
-    routing::{get, post},
+    routing::{delete, get, post, put},
     Router,
 };
 use serde::Deserialize;
@@ -23,6 +23,10 @@ pub fn create_router() -> Router {
         .route("/api/backtest", post(run_backtest))
         .route("/api/strategies", get(get_strategies))
         .route("/api/strategies/learn", get(get_strategy_learn_list))
+        // 阶段五：自选股和用户设置路由
+        .route("/api/watchlist", get(get_watchlist).post(add_watchlist))
+        .route("/api/watchlist/{symbol}", delete(remove_watchlist))
+        .route("/api/settings", get(get_settings).put(update_settings))
 }
 
 /// 搜索查询参数
@@ -195,4 +199,48 @@ async fn get_strategies() -> Json<Vec<StrategyInfo>> {
 /// 获取策略学习内容
 async fn get_strategy_learn_list() -> Json<Vec<StrategyLearnDetail>> {
     Json(crate::strategies::get_strategy_learn_list())
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 阶段五：自选股路由
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// GET /api/watchlist
+/// 获取自选股列表
+async fn get_watchlist() -> Result<Json<Vec<StockInfo>>, (StatusCode, Json<ApiError>)> {
+    todo!("阶段五实现：获取自选股列表")
+}
+
+/// POST /api/watchlist
+/// 添加自选股
+async fn add_watchlist(
+    Json(stock): Json<StockInfo>,
+) -> Result<Json<StockInfo>, (StatusCode, Json<ApiError>)> {
+    todo!("阶段五实现：添加自选股")
+}
+
+/// DELETE /api/watchlist/{symbol}
+/// 删除自选股
+async fn remove_watchlist(
+    Path(symbol): Path<String>,
+) -> Result<Json<SuccessResponse>, (StatusCode, Json<ApiError>)> {
+    todo!("阶段五实现：删除自选股")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 阶段五：用户设置路由
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// GET /api/settings
+/// 获取用户设置
+async fn get_settings() -> Result<Json<std::collections::HashMap<String, String>>, (StatusCode, Json<ApiError>)> {
+    todo!("阶段五实现：获取用户设置")
+}
+
+/// PUT /api/settings
+/// 更新用户设置
+async fn update_settings(
+    Json(settings): Json<std::collections::HashMap<String, String>>,
+) -> Result<Json<std::collections::HashMap<String, String>>, (StatusCode, Json<ApiError>)> {
+    todo!("阶段五实现：更新用户设置")
 }

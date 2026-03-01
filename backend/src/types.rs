@@ -214,3 +214,45 @@ pub struct ApiError {
     /// 错误码（INVALID_PARAM / STOCK_NOT_FOUND / STRATEGY_NOT_FOUND / DATA_SOURCE_ERROR / INTERNAL_ERROR）
     pub code: String,
 }
+
+// ─── 阶段五：数据存储层 ──────────────────────────────────────────────────────
+
+/// SuccessResponse — 通用成功响应
+///
+/// 用于 DELETE /api/watchlist/{symbol} 等操作的成功确认。
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SuccessResponse {
+    /// 操作是否成功
+    pub success: bool,
+}
+
+/// WatchlistItem — 自选股项目（含添加时间）
+///
+/// 数据库中存储的自选股记录，比 StockInfo 多一个 added_at 字段。
+/// API 对外返回的仍然是 Vec<StockInfo>，此结构用于内部存储。
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct WatchlistItem {
+    /// 股票代码
+    pub symbol: String,
+    /// 股票名称
+    pub name: String,
+    /// 添加时间 ISO 8601
+    pub added_at: String,
+}
+
+/// CacheMeta — 缓存元信息
+///
+/// 记录某只股票的缓存覆盖范围和最后更新时间。
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CacheMeta {
+    /// 股票代码
+    pub symbol: String,
+    /// 最后更新时间 ISO 8601
+    pub last_updated: String,
+    /// 缓存起始日期 YYYY-MM-DD
+    pub start_date: String,
+    /// 缓存结束日期 YYYY-MM-DD
+    pub end_date: String,
+}
