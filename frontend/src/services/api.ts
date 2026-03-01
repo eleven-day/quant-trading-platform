@@ -8,8 +8,7 @@ import type {
   StrategyLearnDetail
 } from '@/types';
 
-// 阶段四实现前，回测和策略仍使用 mock 数据
-import { mockBacktestResult, mockStrategies } from '@/mocks/backtest-result';
+// 阶段六实现前，策略学习仍使用 mock 数据
 import { mockLearnStrategies } from '@/mocks/learn-data';
 
 // 后端 API 基地址（Rust axum 服务运行在 3001 端口）
@@ -51,27 +50,20 @@ export async function getIndexSnapshot(): Promise<IndexSnapshot[]> {
   return apiFetch<IndexSnapshot[]>('/api/index/snapshot');
 }
 
-// ─── 回测 & 策略（阶段四实现前继续使用 mock）──────────────────────────────
+// ─── 回测 & 策略（真实 API）─────────────────────────────────────────────
 
 export async function runBacktest(
   params: BacktestParams
 ): Promise<BacktestResult> {
-  // TODO: 阶段四实现后替换为真实 API 调用
-  // return apiFetch<BacktestResult>('/api/backtest', {
-  //   method: 'POST',
-  //   headers: { 'Content-Type': 'application/json' },
-  //   body: JSON.stringify(params),
-  // });
-  void params; // 避免 unused 警告
-  await new Promise(resolve => setTimeout(resolve, 1500)); // 模拟回测计算时间
-  return mockBacktestResult;
+  return apiFetch<BacktestResult>('/api/backtest', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
 }
 
 export async function getStrategies(): Promise<StrategyInfo[]> {
-  // TODO: 阶段四实现后替换为真实 API 调用
-  // return apiFetch<StrategyInfo[]>('/api/strategies');
-  await new Promise(resolve => setTimeout(resolve, 200));
-  return mockStrategies;
+  return apiFetch<StrategyInfo[]>('/api/strategies');
 }
 
 export async function getStrategyLearnList(): Promise<StrategyLearnDetail[]> {

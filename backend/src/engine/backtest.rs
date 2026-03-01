@@ -195,7 +195,7 @@ fn build_equity_curve(data: &[OHLCV], trades: &[Trade], initial_capital: f64) ->
                     shares_held += trade.quantity;
                 }
                 "sell" => {
-                    cash -= trade.price * trade.quantity as f64; // Wait this is wrong! Should be +=
+                    cash += trade.price * trade.quantity as f64;
                     shares_held -= trade.quantity;
                 }
                 _ => {}
@@ -227,8 +227,8 @@ fn calculate_max_drawdown(equity_curve: &[EquityPoint], is_empty_trades: bool) -
         if point.value > peak {
             peak = point.value;
         }
-        let dd = (peak - point.value) / peak * 100.0;
-        if dd > max_drawdown {
+        let dd = (point.value - peak) / peak * 100.0;
+        if dd < max_drawdown {
             max_drawdown = dd;
         }
     }
