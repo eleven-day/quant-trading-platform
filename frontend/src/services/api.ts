@@ -8,8 +8,6 @@ import type {
   StrategyLearnDetail
 } from '@/types';
 
-// 阶段六实现前，策略学习仍使用 mock 数据
-import { mockLearnStrategies } from '@/mocks/learn-data';
 
 // 后端 API 基地址（Rust axum 服务运行在 3001 端口）
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:3001';
@@ -67,10 +65,7 @@ export async function getStrategies(): Promise<StrategyInfo[]> {
 }
 
 export async function getStrategyLearnList(): Promise<StrategyLearnDetail[]> {
-  // TODO: 阶段六实现后替换为真实 API 调用
-  // return apiFetch<StrategyLearnDetail[]>('/api/strategies/learn');
-  await new Promise(resolve => setTimeout(resolve, 200));
-  return mockLearnStrategies;
+  return apiFetch<StrategyLearnDetail[]>('/api/strategies/learn');
 }
 
 // ─── 自选股（阶段五）─────────────────────────────────────────────────
