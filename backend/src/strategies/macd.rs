@@ -51,7 +51,21 @@ pub fn generate_signals(data: &[OHLCV]) -> Vec<Signal> {
         histogram[i] = macd[i] - signal_line[i];
     }
 
-    // 4. 根据 Histogram 交叉零轴生成信号
+    // 首先检查初始状态
+    if data[33].volume > 0 {
+        if histogram[33] > 0.0 || macd[33] > 0.0 {
+            signals.push(Signal {
+                index: 33,
+                signal_type: "buy".to_string(),
+            });
+        } else if histogram[33] < 0.0 || macd[33] < 0.0 {
+            signals.push(Signal {
+                index: 33,
+                signal_type: "sell".to_string(),
+            });
+        }
+    }
+
     for i in 34..n {
         if data[i].volume == 0 {
             continue; // 跳过停牌日
@@ -61,6 +75,7 @@ pub fn generate_signals(data: &[OHLCV]) -> Vec<Signal> {
         let curr_hist = histogram[i];
 
         // 买入：Histogram 从下方上穿 0
+        // 买入：Histogram 从下方上穿 0，或者一直为 0 但 MACD 向上穿 0
         if prev_hist <= 0.0 && curr_hist > 0.0 {
             signals.push(Signal {
                 index: i,

@@ -37,6 +37,14 @@ pub fn generate_signals(data: &[OHLCV]) -> Vec<Signal> {
         rsi_values[14] = 100.0 - (100.0 / (1.0 + rs));
     }
 
+    // RSI 首次计算点的初始状态信号
+    if data[14].volume > 0 && rsi_values[14] > 50.0 {
+        signals.push(Signal {
+            index: 14,
+            signal_type: "buy".to_string(),
+        });
+    }
+
     // 计算后续的 RSI，并产生信号
     for i in 15..n {
         let change = data[i].close - data[i - 1].close;

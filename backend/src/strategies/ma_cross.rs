@@ -29,8 +29,25 @@ pub fn generate_signals(data: &[OHLCV]) -> Vec<Signal> {
         }
     }
 
+    let threshold_ratio = 0.005;
+
+    // 检查首个有效点的初始状态（index 19 是第一个同时有 SMA5 和 SMA20 的位置）
+    if data[19].volume > 0 {
+        let diff = sma5[19] - sma20[19];
+        if diff > threshold_ratio * sma20[19] {
+            signals.push(Signal {
+                index: 19,
+                signal_type: "buy".to_string(),
+            });
+        } else if diff < -threshold_ratio * sma20[19] {
+            signals.push(Signal {
+                index: 19,
+                signal_type: "sell".to_string(),
+            });
+        }
+    }
+
     // 寻找交叉点
-    // i = 20 是第一个可以比较(i)和(i-1)均线都有值的点
     for i in 20..n {
         if data[i].volume == 0 {
             continue; // 跳过停牌日
@@ -42,14 +59,18 @@ pub fn generate_signals(data: &[OHLCV]) -> Vec<Signal> {
         let curr_sma20 = sma20[i];
 
         // 金叉买入：短线上穿长线
-        if curr_sma5 > curr_sma20 && prev_sma5 <= prev_sma20 {
+        if curr_sma5 > curr_sma20 && prev_sma5 <= prev_sma20
+            && curr_sma5 - curr_sma20 > threshold_ratio * curr_sma20
+        {
             signals.push(Signal {
                 index: i,
                 signal_type: "buy".to_string(),
             });
-        } 
+        }
         // 死叉卖出：短线下穿长线
-        else if curr_sma5 < curr_sma20 && prev_sma5 >= prev_sma20 {
+        else if curr_sma5 < curr_sma20 && prev_sma5 >= prev_sma20
+            && curr_sma20 - curr_sma5 > threshold_ratio * curr_sma20
+        {
             signals.push(Signal {
                 index: i,
                 signal_type: "sell".to_string(),
