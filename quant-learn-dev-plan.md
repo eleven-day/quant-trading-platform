@@ -546,12 +546,6 @@ CREATE TABLE user_settings (
 
 ```
 tests/
-├── unit/
-│   ├── strategy_test.rs      ← 纯计算，用 mock 数据，毫秒级
-│   ├── backtest_engine_test.rs  ← 纯计算，用 mock 数据
-│   ├── indicators_test.rs    ← MA/RSI/Bollinger 计算
-│   └── cache_test.rs         ← SQLite 缓存逻辑
-└── integration/
     ├── market_data_test.rs   ← 真实 API 调用（慢，CI 可跳过）
     └── full_pipeline_test.rs ← 获取数据 → 回测 → 验证完整链路
 ```
@@ -632,7 +626,6 @@ for (const p of pages) {
 ### 8.2 性能优化
 
 - 后端：
-  - 数据获取并发（多只股票同时请求）
   - 回测引擎优化（避免不必要的内存分配）
   - SQLite WAL 模式（提升并发读写性能）
 - 前端：
