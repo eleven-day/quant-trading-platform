@@ -225,6 +225,16 @@
 - [ ] 量化交易基础知识（配合策略学习页面）
 
 ---
+## 八、已知 Bug
+
+✅ **已全部修复并归档** — 详见 [docs/bugfix-v0.1.1.md](docs/bugfix-v0.1.1.md)
+
+- [x] Bug 1: 行情看板 日K/周K/月K 切换无反应 — 客户端聚合 `aggregateOHLCV()`
+- [x] Bug 2: 自选股列表假数据 — 改用 `getWatchlist()` API + 真实行情
+- [x] Bug 3: 搜索股票功能不存在 — 新增 `StockSearch.tsx` 组件
+- [x] Bug 4: 回测页股票选择器无法交互 — 重写 `ConfigBar.tsx`
+- [x] Bug 5: 策略学习「未学」标记无法消除 — localStorage 学习进度追踪
+---
 
 ## 已完成里程碑
 

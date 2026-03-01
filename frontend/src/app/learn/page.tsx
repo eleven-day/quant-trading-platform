@@ -18,6 +18,7 @@ export default function LearnPage() {
   const [strategies, setStrategies] = useState<StrategyLearnDetail[]>([]);
   const [selectedId, setSelectedId] = useState<string>('dual-ma');
   const [loading, setLoading] = useState<boolean>(true);
+  const [learnedIds, setLearnedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     async function loadData() {
@@ -38,7 +39,45 @@ export default function LearnPage() {
     loadData();
   }, [showToast]);
 
-  const selectedStrategy = strategies.find(s => s.id === selectedId) || null;
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('quant-learn-progress');
+      if (saved) {
+        const parsed = JSON.parse(saved) as string[];
+        setLearnedIds(new Set(parsed));
+      }
+    } catch {
+      // localStorage 不可用或数据损坏，忽略
+    }
+  }, []);
+
+  useEffect(() => {
+    // 如果已经学过，不需要计时
+    if (learnedIds.has(selectedId)) return;
+    
+    const timer = setTimeout(() => {
+      setLearnedIds(prev => {
+        const next = new Set(prev);
+        next.add(selectedId);
+        // 持久化到 localStorage
+        try {
+          localStorage.setItem('quant-learn-progress', JSON.stringify([...next]));
+        } catch {
+          // 忽略 localStorage 错误
+        }
+        return next;
+      });
+    }, 3000);
+    
+    return () => { clearTimeout(timer); };
+  }, [selectedId, learnedIds]);
+
+  const strategiesWithProgress = strategies.map(s => ({
+    ...s,
+    status: learnedIds.has(s.id) ? '已学' as const : s.status,
+  }));
+
+  const selectedStrategy = strategiesWithProgress.find(s => s.id === selectedId) || null;
 
   if (loading) {
     return (
@@ -72,7 +111,7 @@ export default function LearnPage() {
   return (
     <div className="flex flex-row flex-1 min-h-0">
       <StrategySidebar 
-        strategies={strategies} 
+        strategies={strategiesWithProgress} 
         selectedId={selectedId} 
         onSelect={setSelectedId} 
       />
