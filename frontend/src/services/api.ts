@@ -72,3 +72,39 @@ export async function getStrategyLearnList(): Promise<StrategyLearnDetail[]> {
   await new Promise(resolve => setTimeout(resolve, 200));
   return mockLearnStrategies;
 }
+
+// ─── 自选股（阶段五）─────────────────────────────────────────────────
+
+export async function getWatchlist(): Promise<StockInfo[]> {
+  return apiFetch<StockInfo[]>('/api/watchlist');
+}
+
+export async function addToWatchlist(stock: StockInfo): Promise<StockInfo> {
+  return apiFetch<StockInfo>('/api/watchlist', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(stock),
+  });
+}
+
+export async function removeFromWatchlist(symbol: string): Promise<{ success: boolean }> {
+  return apiFetch<{ success: boolean }>(`/api/watchlist/${encodeURIComponent(symbol)}`, {
+    method: 'DELETE',
+  });
+}
+
+// ─── 用户设置（阶段五）─────────────────────────────────────────────────
+
+export async function getSettings(): Promise<Record<string, string>> {
+  return apiFetch<Record<string, string>>('/api/settings');
+}
+
+export async function updateSettings(
+  settings: Record<string, string>
+): Promise<Record<string, string>> {
+  return apiFetch<Record<string, string>>('/api/settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings),
+  });
+}
