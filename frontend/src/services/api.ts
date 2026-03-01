@@ -8,23 +8,33 @@ import type {
   StrategyLearnDetail
 } from '@/types';
 
-import { mockStockList } from '@/mocks/stock-list';
-import { mockKlineData, mockKlineDataGzmt } from '@/mocks/kline-data';
-import { mockIndexSnapshots } from '@/mocks/index-snapshot';
+// 阶段四实现前，回测和策略仍使用 mock 数据
 import { mockBacktestResult, mockStrategies } from '@/mocks/backtest-result';
 import { mockLearnStrategies } from '@/mocks/learn-data';
 
-// TODO: 阶段二替换为真实 API 调用
+// 后端 API 基地址（Rust axum 服务运行在 3001 端口）
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:3001';
+
+/**
+ * 统一 fetch 封装，处理错误和 JSON 解析
+ */
+async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const url = `${API_BASE}${path}`;
+  const res = await fetch(url, init);
+  if (!res.ok) {
+    // 尝试读取后端返回的 ApiError 结构
+    const body = await res.json().catch(() => null) as { error?: string; code?: string } | null;
+    const msg = body?.error ?? `请求失败: ${res.status} ${res.statusText}`;
+    throw new Error(msg);
+  }
+  return res.json() as Promise<T>;
+}
+
+// ─── 数据获取（真实 API）──────────────────────────────────────────────────
 
 export async function searchStocks(keyword: string): Promise<StockInfo[]> {
-  // 模拟网络延迟
-  await new Promise(resolve => setTimeout(resolve, 300));
-  
   if (!keyword) return [];
-  
-  return mockStockList.filter(
-    stock => stock.symbol.includes(keyword) || stock.name.includes(keyword)
-  );
+  return apiFetch<StockInfo[]>(`/api/stocks/search?q=${encodeURIComponent(keyword)}`);
 }
 
 export async function getStockDaily(
@@ -32,34 +42,41 @@ export async function getStockDaily(
   start: string,
   end: string
 ): Promise<OHLCV[]> {
-  await new Promise(resolve => setTimeout(resolve, 500));
-  
-  // 简单模拟不同股票返回不同数据
-  if (symbol === '600519') {
-    return mockKlineDataGzmt.filter(k => k.date >= start && k.date <= end);
-  }
-  
-  return mockKlineData.filter(k => k.date >= start && k.date <= end);
+  return apiFetch<OHLCV[]>(
+    `/api/stocks/${encodeURIComponent(symbol)}/daily?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`
+  );
 }
 
 export async function getIndexSnapshot(): Promise<IndexSnapshot[]> {
-  await new Promise(resolve => setTimeout(resolve, 200));
-  return mockIndexSnapshots;
+  return apiFetch<IndexSnapshot[]>('/api/index/snapshot');
 }
+
+// ─── 回测 & 策略（阶段四实现前继续使用 mock）──────────────────────────────
 
 export async function runBacktest(
   params: BacktestParams
 ): Promise<BacktestResult> {
+  // TODO: 阶段四实现后替换为真实 API 调用
+  // return apiFetch<BacktestResult>('/api/backtest', {
+  //   method: 'POST',
+  //   headers: { 'Content-Type': 'application/json' },
+  //   body: JSON.stringify(params),
+  // });
+  void params; // 避免 unused 警告
   await new Promise(resolve => setTimeout(resolve, 1500)); // 模拟回测计算时间
   return mockBacktestResult;
 }
 
 export async function getStrategies(): Promise<StrategyInfo[]> {
+  // TODO: 阶段四实现后替换为真实 API 调用
+  // return apiFetch<StrategyInfo[]>('/api/strategies');
   await new Promise(resolve => setTimeout(resolve, 200));
   return mockStrategies;
 }
 
 export async function getStrategyLearnList(): Promise<StrategyLearnDetail[]> {
+  // TODO: 阶段六实现后替换为真实 API 调用
+  // return apiFetch<StrategyLearnDetail[]>('/api/strategies/learn');
   await new Promise(resolve => setTimeout(resolve, 200));
   return mockLearnStrategies;
 }
